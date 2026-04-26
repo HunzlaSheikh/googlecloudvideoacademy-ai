@@ -1,37 +1,47 @@
 import os
 import json
 import logging
-from google.cloud import pubsub_v1
+from flask import Flask, request
 
 from handlers.thumbnail import process_thumbnail
 from handlers.render import process_render
 from handlers.optimize import process_optimize
 from handlers.training import process_training
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-PROJECT_ID = os.environ["GCP_PROJECT"]
-SUBSCRIPTION_ID = os.environ["PUBSUB_SUBSCRIPTION"]
-
-subscriber = pubsub_v1.SubscriberClient()
-subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID)
-
+app = Flask(__name__)
 
 # -----------------------------
-# MESSAGE HANDLER
+# HEALTH CHECK (required by Cloud Run)
 # -----------------------------
-def callback(message):
+@app.route("/", methods=["GET"])
+def health():
+    return "Worker is running", 200
 
+
+# -----------------------------
+# PUBSUB PUSH ENDPOINT
+# -----------------------------
+@app.route("/pubsub", methods=["POST"])
+def pubsub_handler():
     try:
-        raw = message.data.decode("utf-8")
+        envelope = request.get_json()
+
+        if not envelope:
+            return ("No data", 400)
+
+        message = envelope.get("message", {})
+        data = message.get("data")
+
+        import base64
+        raw = base64.b64decode(data).decode("utf-8")
+
         logging.info(f"Received message: {raw}")
 
         params = json.loads(raw)
         msg_type = params.get("type")
 
         # -----------------------------
-        # ROUTER (replaces Azure Queue switch logic)
+        # ROUTER (same logic you had)
         # -----------------------------
         if msg_type == "generate_thumbnail":
             process_thumbnail(params)
@@ -48,25 +58,16 @@ def callback(message):
         else:
             logging.warning(f"Unknown type: {msg_type}")
 
-        message.ack()
+        return ("OK", 200)
 
     except Exception as e:
         logging.exception("Worker error")
-        message.nack()
+        return (str(e), 500)
 
 
 # -----------------------------
-# START LISTENER
+# ENTRYPOINT (Cloud Run requires this)
 # -----------------------------
-def start_worker():
-    streaming_pull_future = subscriber.subscribe(subscription_path, callback=callback)
-    logging.info("Worker started... listening for Pub/Sub messages")
-
-    try:
-        streaming_pull_future.result()
-    except KeyboardInterrupt:
-        streaming_pull_future.cancel()
-
-
 if __name__ == "__main__":
-    start_worker()
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
