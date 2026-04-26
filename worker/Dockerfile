@@ -2,16 +2,13 @@ FROM python:3.10
 
 WORKDIR /app
 
-# system deps (needed for moviepy / ffmpeg)
 RUN apt-get update && apt-get install -y ffmpeg
 
-# copy entire project (so common + worker + api all accessible if needed)
+# copy everything (simpler + safer)
 COPY . /app
 
-# install dependencies 
-RUN pip install --no-cache-dir -r requirements.txt
-# ensure Python can find shared modules
+RUN pip install --no-cache-dir -r worker/requirements.txt
+
 ENV PYTHONPATH=/app
 
-# start worker
 CMD ["python", "worker/app.py"]
