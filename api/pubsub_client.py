@@ -1,7 +1,7 @@
 import json
 import logging
 from google.cloud import pubsub_v1
-from config import Config
+from common.config import Config
 
 
 class PubSubClient:

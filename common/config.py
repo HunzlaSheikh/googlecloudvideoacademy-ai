@@ -9,8 +9,8 @@ class Config:
     # -----------------------------
     # GOOGLE CLOUD CONFIG
     # -----------------------------
-    GCP_PROJECT = os.environ.get("GCP_PROJECT")
-    PUBSUB_TOPIC = os.environ.get("PUBSUB_TOPIC")
+    GCP_PROJECT = os.environ.get("GCP_PROJECT") or 'sportsmarts20'
+    PUBSUB_TOPIC = os.environ.get("PUBSUB_TOPIC") or 'jobs-topic-staging'
 
     # -----------------------------
     # VALIDATION (fail fast)
