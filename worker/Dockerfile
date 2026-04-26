@@ -4,11 +4,10 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y ffmpeg
 
-# copy everything (simpler + safer)
 COPY . /app
 
-RUN pip install --no-cache-dir -r worker/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 ENV PYTHONPATH=/app
 
-CMD ["python", "worker/app.py"]
+CMD ["python", "app.py"]
