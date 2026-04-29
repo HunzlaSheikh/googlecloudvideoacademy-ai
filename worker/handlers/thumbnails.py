@@ -2,8 +2,8 @@ import os
 import logging
 import pathlib
 import shutil
-
-from moviepy.editor import VideoFileClip
+import subprocess
+import json 
 from google.cloud import storage
 
 # =========================
@@ -60,16 +60,42 @@ def process_thumbnail(params):
                     new_db.InsertLogs(projectID, videoID, "thumbnail", "start", "start")
 
                     thumbnail_name = f"VideoThumbnail_{videoID}_{projectID}.jpeg"
-                    thumbnail_path = file_path / thumbnail_name
+                    thumbnail_path = file_path / thumbnail_name 
+                    subprocess.run([
+                        "ffmpeg",
+                        "-ss", "1",
+                        "-i", videoUrl,
+                        "-frames:v", "1",
+                        "-q:v", "2",
+                        str(thumbnail_path)
+                    ], check=True)
 
-                    with VideoFileClip(videoUrl) as clip:
-                        clip.save_frame(str(thumbnail_path), t=1.0)
+                    # ---- 2. Get metadata using ffprobe ----
+                    probe_cmd = [
+                        "ffprobe",
+                        "-v", "error",
+                        "-print_format", "json",
+                        "-show_format",
+                        "-show_streams",
+                        videoUrl
+                    ]
 
-                        width = clip.w
-                        height = clip.h
-                        duration = clip.duration
-                        fps = int(clip.fps)
+                    result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+                    data = json.loads(result.stdout)
+                    # Extract video stream
+                    video_stream = next(
+                        (s for s in data["streams"] if s["codec_type"] == "video"),
+                        None
+                    )
 
+                    width = video_stream.get("width")
+                    height = video_stream.get("height")
+
+                    # FPS calculation safely
+                    num, den = video_stream.get("r_frame_rate").split("/")
+                    fps = int(float(num) / float(den))
+
+                    duration = float(data["format"]["duration"])
                     upload_url = upload_to_gcs_project(
                         projectID,
                         videoID,

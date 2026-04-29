@@ -2,10 +2,19 @@
   app.py
   pubsub_client.py
   Dockerfile
+ 
 
-/common
-  __init__.py
-  config.py
+/worker
+  - common
+     - __init__.py
+     - config.py
+     - dbintegration.py
+  - handlers
+     - aieventdetect.py
+     - thumbnails.py
+  app.py
+  Dockerfile
+  requirements.txt
 
 
   -------------------------------
