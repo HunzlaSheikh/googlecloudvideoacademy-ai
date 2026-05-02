@@ -27,3 +27,4 @@
   
 gcloud run deploy videoai-api-staging --source . --region us-central1
 gcloud run jobs deploy video-render-job-staging --source ./worker/render --region us-central1 --tasks 1 --memory 2Gi --cpu 1 --max-retries 3 --set-env-vars PYTHONPATH=/app
+gcloud run jobs update video-render-job-staging --region us-central1 --vpc-connector sports-jobs-connector --vpc-egress all-traffic

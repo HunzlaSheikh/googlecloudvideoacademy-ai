@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 import logging
 import subprocess
 
@@ -31,6 +32,7 @@ def run_ffmpeg_thumbnail(input_path, output_path, time_sec=1):
 
 
 def main():
+     
     try:
         payload = os.environ.get("JOB_PAYLOAD")
 

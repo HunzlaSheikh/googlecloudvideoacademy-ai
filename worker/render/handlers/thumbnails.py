@@ -190,3 +190,31 @@ def process_thumbnail(params):
         )
 
         return "error"
+
+def upload_to_gcs_project(projectID, videoID, file_name, local_path):
+
+    bucket = storage_client.bucket(cfg.GCS_BUCKET_NAME)
+
+    object_name = f"{cfg.GCS_DIRECTORY}/{projectID}/{file_name}"
+    blob = bucket.blob(object_name)
+
+    blob.upload_from_filename(str(local_path), content_type="image/jpeg")
+    blob.make_public()
+
+    return blob.public_url
+
+
+# =====================================================
+# GCS UPLOAD - LIBRARY
+# =====================================================
+def upload_to_gcs_library(videoID, file_name, local_path):
+
+    bucket = storage_client.bucket(cfg.GCS_BUCKET_NAME)
+
+    object_name = f"{cfg.GCS_DIRECTORY}/LibraryVideos/{file_name}"
+    blob = bucket.blob(object_name)
+
+    blob.upload_from_filename(str(local_path), content_type="image/jpeg")
+    blob.make_public()
+
+    return blob.public_url
