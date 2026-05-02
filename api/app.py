@@ -1,22 +1,104 @@
 from flask import Flask, request, jsonify
 import logging
+import json
+import requests
+import google.auth
+from google.auth.transport.requests import Request
 
- 
-from pubsub_client import PubSubClient
 from common.config import Config
-# -----------------------------
-# APP INIT
-# -----------------------------
+
 app = Flask(__name__)
 
+PROJECT_ID = Config.GCP_PROJECT
+REGION = Config.GCP_REGION
+
 # -----------------------------
-# CLIENT INIT (reused)
+# AUTH (cached)
 # -----------------------------
-pubsub_client = PubSubClient()
+credentials, _ = google.auth.default(
+    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+)
+
+def get_token():
+    if not credentials.valid:
+        credentials.refresh(Request())
+    return credentials.token
 
 
 # -----------------------------
-# HEALTH CHECK
+# JOB TRIGGER
+# -----------------------------
+def trigger_job(job_name, payload):
+    try:
+        url = f"https://run.googleapis.com/v2/projects/{PROJECT_ID}/locations/{REGION}/jobs/{job_name}:run"
+
+        body = {
+            "overrides": {
+                "containerOverrides": [
+                    {
+                        "env": [
+                            {
+                                "name": "JOB_PAYLOAD",
+                                "value": json.dumps(payload)
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+        headers = {
+            "Authorization": f"Bearer {get_token()}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(url, headers=headers, json=body, timeout=10)
+
+        if response.status_code not in [200, 201, 202]:
+            logging.error(f"Job trigger failed: {response.text}")
+            raise Exception(response.text)
+
+        try:
+            return response.json()
+        except:
+            return {"status": "started"}
+
+    except requests.exceptions.Timeout:
+        # VERY IMPORTANT: job might still be running
+        logging.warning("Job trigger timeout - assuming started")
+        return {"status": "started"}
+
+    except Exception as e:
+        logging.exception("Error triggering Cloud Run Job")
+        raise
+
+
+# -----------------------------
+# GENERIC HANDLER
+# -----------------------------
+def handle_request(required_field, payload_builder, job_name, success_msg):
+    try:
+        data = request.get_json()
+
+        if not data or not data.get(required_field):
+            return jsonify({"error": f"{required_field} is required"}), 400
+
+        payload = payload_builder(data)
+
+        job = trigger_job(job_name, payload)
+
+        return jsonify({
+            "message": success_msg,
+            "job": job
+        }), 200
+
+    except Exception as e:
+        logging.exception(e)
+        return jsonify({"error": str(e)}), 500
+
+
+# -----------------------------
+# HEALTH
 # -----------------------------
 @app.route("/health", methods=["GET"])
 def health():
@@ -27,251 +109,89 @@ def health():
 
 
 # -----------------------------
-# AI EVENT DETECT
+# ENDPOINTS
 # -----------------------------
 @app.route("/ai-event-detect", methods=["POST"])
 def ai_event_detect():
-    try:
-        data = request.get_json()
-
-        if not data.get("videoId"):
-            return jsonify({"error": "videoId is required"}), 400
-
-        payload = {
+    return handle_request(
+        "videoId",
+        lambda d: {
             "type": "ai_event_detect",
-            "videoId": data.get("videoId"),
-            "projectId": data.get("projectId"),
-            "startTime": data.get("startTime"),
-            "endTime": data.get("endTime"),
-            "chunk": data.get("chunk"),
-            "domainId": data.get("domainId"),
-            "time": data.get("time", "0")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "AI event detect queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
+            "videoId": d.get("videoId"),
+            "projectId": d.get("projectId"),
+            "startTime": d.get("startTime"),
+            "endTime": d.get("endTime"),
+            "chunk": d.get("chunk"),
+            "domainId": d.get("domainId"),
+            "time": d.get("time", "0")
+        },
+        "ai-event-detect-job",
+        "AI event detection started"
+    )
 
 
-# -----------------------------
-# FINAL CLIP RENDER
-# -----------------------------
 @app.route("/final-clip-render", methods=["POST"])
 def final_clip_render():
-    try:
-        data = request.get_json()
-
-        if not data.get("projectID"):
-            return jsonify({"error": "projectID is required"}), 400
-
-        payload = {
+    return handle_request(
+        "projectID",
+        lambda d: {
             "type": "final_clip_render",
-            "projectID": data.get("projectID"),
-            "userID": data.get("userID"),
-            "mergeType": data.get("mergeType"),
-            "analysisId": data.get("analysisId"),
-            "cameraAngle": data.get("cameraAngle")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "Final clip render queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
+            "projectID": d.get("projectID"),
+            "userID": d.get("userID"),
+            "mergeType": d.get("mergeType"),
+            "analysisId": d.get("analysisId"),
+            "cameraAngle": d.get("cameraAngle")
+        },
+        "final-clip-job",
+        "Final clip render started"
+    )
 
 
-# -----------------------------
-# GENERATE THUMBNAIL
-# -----------------------------
 @app.route("/generate-thumbnail", methods=["POST"])
 def generate_thumbnail():
-    try:
-        data = request.get_json()
-
-        if not data.get("videoID"):
-            return jsonify({"error": "videoID is required"}), 400
-
-        payload = {
+    return handle_request(
+        "videoID",
+        lambda d: {
             "type": "generate_thumbnail",
-            "videoID": data.get("videoID"),
-            "videoType": data.get("videoType")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "Thumbnail queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
+            "videoID": d.get("videoID"),
+            "videoType": d.get("videoType")
+        },
+        "video-render-job-staging",  
+        "Thumbnail job started"
+    )
 
 
-# -----------------------------
-# IMPORT CLIP TO LIBRARY
-# -----------------------------
-@app.route("/import-clip-to-library", methods=["POST"])
-def import_clip_to_library():
-    try:
-        data = request.get_json()
-
-        if not data.get("videoID"):
-            return jsonify({"error": "videoID is required"}), 400
-
-        payload = {
-            "type": "import_clip_to_library",
-            "videoID": data.get("videoID"),
-            "libraryVideoID": data.get("libraryVideoID"),
-            "clipID": data.get("clipID")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "Import clip queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
-
-
-# -----------------------------
-# RETRAIN MODEL
-# -----------------------------
-@app.route("/retrain-model", methods=["POST"])
-def retrain_model():
-    try:
-        data = request.get_json()
-
-        if not data.get("retrain"):
-            return jsonify({"error": "retrain is required"}), 400
-
-        payload = {
-            "type": "retrain_model",
-            "retrain": data.get("retrain"),
-            "version": data.get("version"),
-            "domainId": data.get("domainId")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "Model training queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
-
-
-# -----------------------------
-# RENDER CLIP
-# -----------------------------
 @app.route("/render-clip", methods=["POST"])
 def render_clip():
-    try:
-        data = request.get_json()
-
-        if not data.get("videoID"):
-            return jsonify({"error": "videoID is required"}), 400
-
-        payload = {
+    return handle_request(
+        "videoID",
+        lambda d: {
             "type": "render_clip",
-            "videoID": data.get("videoID"),
-            "renderType": data.get("renderType"),
-            "userID": data.get("userID"),
-            "analysisId": data.get("analysisId")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "Render clip queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
+            "videoID": d.get("videoID"),
+            "renderType": d.get("renderType"),
+            "userID": d.get("userID"),
+            "analysisId": d.get("analysisId")
+        },
+        "video-render-job-staging",
+        "Render job started"
+    )
 
 
-# -----------------------------
-# ICLIP RENDER
-# -----------------------------
-@app.route("/iclip-render", methods=["POST"])
-def iclip_render():
-    try:
-        data = request.get_json()
-
-        if not data.get("videoID"):
-            return jsonify({"error": "videoID is required"}), 400
-
-        payload = {
-            "type": "iclip_render",
-            "videoID": data.get("videoID"),
-            "clipID": data.get("clipID"),
-            "userID": data.get("userID")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "iClip render queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
-
-
-# -----------------------------
-# OPTIMIZE VIDEO
-# -----------------------------
 @app.route("/optimize-video", methods=["POST"])
 def optimize_video():
-    try:
-        data = request.get_json()
-
-        if not data.get("videoID"):
-            return jsonify({"error": "videoID is required"}), 400
-
-        payload = {
+    return handle_request(
+        "videoID",
+        lambda d: {
             "type": "optimize_video",
-            "videoID": data.get("videoID")
-        }
-
-        message_id = pubsub_client.publish(payload)
-
-        return jsonify({
-            "message": "Optimize video queued",
-            "message_id": message_id
-        }), 200
-
-    except Exception as e:
-        logging.exception(e)
-        return jsonify({"error": str(e)}), 500
+            "videoID": d.get("videoID")
+        },
+        "video-render-job-staging",
+        "Optimize job started"
+    )
 
 
 # -----------------------------
-# RUN APP (Cloud Run entry)
+# RUN
 # -----------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(Config.PORT) if hasattr(Config, "PORT") else 8080)
+    app.run(host="0.0.0.0", port=int(getattr(Config, "PORT", 8080)))

@@ -11,7 +11,7 @@ class Config:
     # -----------------------------
     GCP_PROJECT = os.environ.get("GCP_PROJECT") or 'sportsmarts20'
     PUBSUB_TOPIC = os.environ.get("PUBSUB_TOPIC") or 'jobs-topic-staging'
-    GCP_REGION = 'us-central1'
+
     # -----------------------------
     # VALIDATION (fail fast)
     # -----------------------------

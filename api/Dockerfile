@@ -15,7 +15,16 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # -----------------------------
-# Install dependencies
+# System dependencies (important for auth + SSL)
+# -----------------------------
+RUN apt-get update && apt-get install -y \
+    curl \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------
+# Install Python dependencies
 # -----------------------------
 COPY requirements.txt .
 
@@ -27,11 +36,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # -----------------------------
-# Cloud Run uses port 8080
+# Cloud Run port
 # -----------------------------
 EXPOSE 8080
 
 # -----------------------------
-# Start application (production)
+# Start API
 # -----------------------------
 CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]
