@@ -1,8 +1,13 @@
 FROM python:3.10-slim
 
+# -----------------------------
+# Work directory
+# -----------------------------
 WORKDIR /app
 
-# System dependencies
+# -----------------------------
+# System dependencies (ffmpeg + OpenGL + ODBC)
+# -----------------------------
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libgl1 \
@@ -14,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# SQL Server driver
+# Install ODBC Driver 17 for SQL Server
 RUN curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft-prod.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
@@ -22,15 +27,23 @@ RUN curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor 
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# -----------------------------
+# Copy the entire render service
+# This includes /common, /handlers, and main.py
+# -----------------------------
+COPY . /app
 
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# -----------------------------
+# Install dependencies for render job only
+# -----------------------------
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
-
+# -----------------------------
+# Python import root
+# -----------------------------
 ENV PYTHONPATH=/app
-ENV ODBCSYSINI=/etc
 
-# ✅ THIS IS THE KEY CHANGE
-CMD ["python", "app.py"]
+# -----------------------------
+# Cloud Run Job entrypoint
+# -----------------------------
+CMD ["python", "main.py"]
